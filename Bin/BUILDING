@@ -1,0 +1,3 @@
+To build this program in the root directory type "make all"
+inside a terminal on linux, if using windows open a wsl window
+and in the root directory of this program type "make win"
