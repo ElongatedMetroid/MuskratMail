@@ -115,9 +115,27 @@ void queue_remove(int uid){
     pthread_mutex_unlock(&clients_mutex);
 }
 
+void manageArgs(char *buf_out, int uid){
+    char *gbuf = NULL; //general buf
+
+    if(strstr(buf_out, "/PRIVATE")){
+        gbuf = xmalloc(sizeof(buf_out));
+
+        strcpy(gbuf, strstr(buf_out, "/PRIVATE"));
+        strcpy(gbuf, strstr(gbuf, " "));
+
+        int privMesUID = atoi(gbuf);
+
+        send_private_message(buf_out, privMesUID);
+        free(gbuf);
+    }
+    else if(strstr(buf_out, "/ls")){
+        client_list(uid);
+    }
+}
+
 void* handle_client(void *ptr){
     char buff_out[BUFSIZE];
-    char *gbuf = NULL; //general buf
     char name[32];
     int leave_flg = 0;
 
@@ -145,21 +163,9 @@ void* handle_client(void *ptr){
         int receive = recv(cli->sockfd, buff_out, BUFSIZE, 0);
         if(receive > 0){
             
-            if(strstr(buff_out, "/PRIVATE")){
-                gbuf = xmalloc(sizeof(buff_out));
-
-                strcpy(gbuf, strstr(buff_out, "/PRIVATE"));
-                strcpy(gbuf, strstr(gbuf, " "));
-
-                int privMesUID = atoi(gbuf);
-
-                send_private_message(buff_out, privMesUID);
-                free(gbuf);
+            if(strstr(buff_out, "/PRIVATE") || strstr(buff_out, "/ls")){
+                manageArgs(buff_out, cli->uid);
                 goto restart;                               //so it does not show private message in public chat
-            }
-            else if(strstr(buff_out, "/ls")){
-                client_list(cli->uid);
-                goto restart;
             }
 
             if(strlen(buff_out) > 0){
@@ -195,6 +201,8 @@ void* handle_client(void *ptr){
 int main(int argc, char *argv[]){
     if(argc < 2)
         ERROR("Usage: ./server <port>\n");
+
+    printf("Server started!\n (Dont Worry, Your server is not broken, more output will come once a person has joined or an error has occured)\n");
 
     int port = atoi(argv[1]);
     int listenfd = 0, connfd = 0;
