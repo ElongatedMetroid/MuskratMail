@@ -18,72 +18,78 @@
 */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
+#include <signal.h>
 #include <unistd.h>
-#include <stdint.h>
-
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <pthread.h>
 #include "../include/colors.h"
 #include "../include/common.h"
-#include "include/account.h"
 
-int16_t socket_create(void);
-int socket_connect(int hSocket, int port, char *ip);
-int socket_send(int hSocket, char *Rqst, int16_t lenRqst);
-int socket_receive(int hSocket, char* Rsp, int16_t RvcSize);
+#define MAX_LEN 2048
 
-int main(int argc, char *argv[]){
-    if(argc < 4)
-        ERROR("Not enough arguments provided! Please Provide the Port Number to Host the Server On and Maxclients!\n./client port serverip accdatapath\n");
+volatile sig_atomic_t flag = 0;
+int sockfd = 0;
+char name[32];
 
-    struct account_data acc_data;
-    char *accdatapath = argv[3];
-    char *server_ip = argv[2];
-    int server_port = atoi(argv[1]);
+void handle_sigint(int sig){
+    flag = 1;
+}
 
-    int hSocket = 0, read_size = 0;
-    //struct sockaddr_in server;
-    char sendToServer[1024] = {0};
-    char usrMessage[1024] = {0};
-    char server_reply[200] = {0};
+void str_overwrite_stdout() {
+  printf("%s", "> ");
+  fflush(stdout);
+}
 
-    account_load(&acc_data, accdatapath);
-    strcat(acc_data.usrname, ": ");
+void sendmsghandler(){
+    char msg[MAX_LEN] = {};
+    char buffer[MAX_LEN + 32] = {};
 
     while(1){
-        memset(sendToServer, '\0', sizeof(sendToServer));
+        str_overwrite_stdout();
+        fgets(msg, MAX_LEN, stdin);
+        msg[strcspn(msg, "\n")] = '\0';   //remove newline
 
-        hSocket = socket_create();
+        if(strcmp(msg, "exit") == 0)
+            break;
+        else{
+            sprintf(buffer, "%s: %s\n", name, msg);
+            send(sockfd, buffer, strlen(buffer), 0);
+        }
 
-        if(hSocket == -1)
-            ERROR("Could not create socket!\n");
-
-        DEBUG("Socket Created! hSocket %d\n", hSocket);
-
-        if(socket_connect(hSocket, server_port, server_ip) < 0)
-            ERROR("Connect Failed!\n");
-
-        printf(GRE"Enter the Message: "RESET);
-        fgets(usrMessage, 1024, stdin);
-        usrMessage[strcspn(usrMessage, "\n")] = '\0';
-        strcat(sendToServer, acc_data.usrname);
-        strcat(sendToServer, usrMessage);
-
-        //Send data to server
-        socket_send(hSocket, sendToServer, strlen(sendToServer));
-
-        //Recive data from the server
-        read_size = socket_receive(hSocket, server_reply, 200);
-        printf(MAG"%s"RESET"\n\n", server_reply);
-
-        close(hSocket);
+        bzero(msg, MAX_LEN);
+        bzero(buffer, MAX_LEN + 32);
     }
-    return 0;
+
+    handle_sigint(2);
+}
+
+void recvmsghandler(){
+    char msg[MAX_LEN] = {};
+
+    while(1){
+        int receive = recv(sockfd, msg, MAX_LEN, 0);
+
+        if(receive > 0){
+            printf("%s", msg);
+            str_overwrite_stdout();
+        }
+        else if(receive == 0)
+            break;
+        else{
+            //-1
+        }
+        memset(msg, 0, sizeof(msg));
+    }
 }
 
 int16_t socket_create(void){
     int16_t hSocket = 0;
+    printf("Creating the Socket\n");
     hSocket = socket(AF_INET, SOCK_STREAM, 0);
     /*
         AF_INET - internet protocal
@@ -93,45 +99,60 @@ int16_t socket_create(void){
     return hSocket;
 }
 
-int socket_connect(int hSocket, int port, char *ip){
-    int iRetval = -1;
-    struct sockaddr_in remote = {0};
+int main(int argc, char *argv[]){
+    if(argc != 3)
+        ERROR("Usage: ./client <port> <ip>\n");
 
-    //internet address family
-    remote.sin_family = AF_INET;
+    int port = atoi(argv[1]);
+    char *ip = argv[2];
 
-    //any incoming interface
-    remote.sin_addr.s_addr = inet_addr(ip);
-    remote.sin_family = AF_INET;
-    remote.sin_port = htons(port);              //set client port
+    //handle user pressing ctrl+c
+    signal(SIGINT, handle_sigint);
 
-    iRetval = connect(hSocket, (struct sockaddr *)&remote, sizeof(remote));
-    return iRetval;
-}
+    printf("Enter a username to be seen by other users: ");
+    fgets(name, 32, stdin);
+    name[strcspn(name, "\n")] = '\0';   //remove newline
 
-int socket_send(int hSocket, char *Rqst, int16_t lenRqst){
-    int shortRetval = -1;
-    struct timeval tv;
-    tv.tv_sec = 20; //20 secs timeout
-    tv.tv_usec = 0;
+    if(strlen(name) > 32 || strlen(name) < 2)
+        ERROR("Name must be less than 30 and more the 2 chars!\n");
 
-    if(setsockopt(hSocket, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(tv)) < 0)
-        ERROR("Time out!\n");
+    struct sockaddr_in server_addr;
 
-    shortRetval = send(hSocket, Rqst, lenRqst, 0);
-    return shortRetval;
-}
+    //sock settings
+    sockfd = socket_create();
+    if(sockfd == -1)
+        ERROR("Could not create socket!\n");
 
-int socket_receive(int hSocket, char* Rsp, int16_t RvcSize){
-    int shortRetval = -1;
-    struct timeval tv;
-    tv.tv_sec = 20; //20 secs timeout
-    tv.tv_usec = 0; 
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr(ip);
+    server_addr.sin_port = htons(port);
 
-    if(setsockopt(hSocket, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv)) < 0)
-        ERROR("Time Out!\n");
+    //connect to the server
+    int err = connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    if(err == -1)
+        ERROR("connect failed!\n");
 
-    shortRetval = recv(hSocket, Rsp, RvcSize, 0);
+    //send name
+    send(sockfd, name, 32, 0);
 
-    return shortRetval;
+    pthread_t sendmsgthread = 0;
+
+    if(pthread_create(&sendmsgthread, NULL, (void*)sendmsghandler, NULL) != 0)
+        ERROR("Could not create thread!\n");
+
+    pthread_t recvmsgthread = 0;
+
+    if(pthread_create(&recvmsgthread, NULL, (void*)recvmsghandler, NULL) != 0)
+        ERROR("Could not create thread!\n");
+
+    while(1){
+        if(flag){
+            printf("\nSee you later!\n");
+            break;
+        }
+    }
+
+    close(sockfd);
+
+    return EXIT_SUCCESS;
 }
