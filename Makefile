@@ -1,6 +1,6 @@
 CC=gcc
-SRC_SRV=Server/src/*.c
-SRC_CLI=Client/src/*.c
+SRC_SRV=Server/*.c include/*.c
+SRC_CLI=Client/*.c Client/src/*.c include/*.c
 FLGS= -O2
 DEBFLGS = -Wall -g -DDEBON
 
