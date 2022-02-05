@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define CLEAR "\e[1;1H\e[2J"
+
 #ifdef DEBON
     /*
         if DEBON is defined you can use the 

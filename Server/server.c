@@ -17,28 +17,7 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include <stdio.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <stdint.h>
-#include <pthread.h>
-#include <signal.h>
-#include <stdlib.h>
-
-#include "../include/colors.h"
-#include "../include/common.h"
-
-#define BUFSIZE 1024
-#define MAX_CLIENTS 100
-
-struct client{
-    struct sockaddr_in address;
-    int sockfd;
-    int uid;
-    char name[32];
-};
+#include "server.h"
 
 //atomic allows thread safe code by not allowing two threads to read the same value from memory at the same time
 static _Atomic uint32_t cli_count = 0;
@@ -50,7 +29,6 @@ pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int16_t socket_create(void){
     int16_t hSocket = 0;
-    printf("Creating the Socket\n");
     hSocket = socket(AF_INET, SOCK_STREAM, 0);
     /*
         AF_INET - internet protocal
@@ -71,6 +49,38 @@ void send_message(char *str, int uid){
                     break;
                 }
             }
+        }
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void send_private_message(char *str, int uid){
+    pthread_mutex_lock(&clients_mutex);
+
+    for(int i = 0; i < MAX_CLIENTS; i++){                           //write to all clients while we have not hit max
+        if(clients[i]){                                             //if clients[i] contains any data...
+            if(clients[i]->uid == uid){                             //send message to everyone but self
+                if(write(clients[i]->sockfd, str, strlen(str)) < 0)
+                    perror("Write to sockfd failed!\n");
+                break;
+            }
+        }
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void client_list(int personal_uid){
+    pthread_mutex_lock(&clients_mutex);
+    char buf[BUFSIZE];
+
+    for(int i = 0; i < MAX_CLIENTS; ++i){
+        if(clients[i]){
+            sprintf(buf, "Client %d: Name: %s: UID: %d\n", i, clients[i]->name, clients[i]->uid);
+            pthread_mutex_unlock(&clients_mutex);   //unlock to allow sending private message
+            send_private_message(buf, personal_uid);
+            pthread_mutex_lock(&clients_mutex);
         }
     }
 
@@ -107,6 +117,7 @@ void queue_remove(int uid){
 
 void* handle_client(void *ptr){
     char buff_out[BUFSIZE];
+    char *gbuf = NULL; //general buf
     char name[32];
     int leave_flg = 0;
 
@@ -119,7 +130,7 @@ void* handle_client(void *ptr){
     }
     else{
         strcpy(cli->name, name);
-        sprintf(buff_out, "%s has joined!\n", cli->name);
+        sprintf(buff_out, GRE"%s"RESET" has "RED"j"YEL"o"GRE"i"BLU"n"MAG"e"RED"d"YEL"!"RESET"\n", cli->name);
         printf("%s", buff_out);
         send_message(buff_out, cli->uid);
     }
@@ -127,19 +138,37 @@ void* handle_client(void *ptr){
     bzero(buff_out, BUFSIZE);    //clear out buffer
 
     while(1){
+        restart:
         if(leave_flg)
             break;
 
         int receive = recv(cli->sockfd, buff_out, BUFSIZE, 0);
         if(receive > 0){
+            
+            if(strstr(buff_out, "/PRIVATE")){
+                gbuf = xmalloc(sizeof(buff_out));
+
+                strcpy(gbuf, strstr(buff_out, "/PRIVATE"));
+                strcpy(gbuf, strstr(gbuf, " "));
+
+                int privMesUID = atoi(gbuf);
+
+                send_private_message(buff_out, privMesUID);
+                free(gbuf);
+                goto restart;                               //so it does not show private message in public chat
+            }
+            else if(strstr(buff_out, "/ls")){
+                client_list(cli->uid);
+                goto restart;
+            }
+
             if(strlen(buff_out) > 0){
                 send_message(buff_out, cli->uid);
-
                 buff_out[strcspn(buff_out, "\n")] = '\0';   //remove newline
                 printf("%s -> %s\n", buff_out, cli->name);
             }
         }
-        else if(receive == 0 || strcmp(buff_out, "exit") == 0){
+        else if(receive == 0 || strcmp(buff_out, "/exit") == 0){
             sprintf(buff_out, "%s has left\n", cli->name);
             printf("%s", buff_out);
             send_message(buff_out, cli->uid);

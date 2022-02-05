@@ -41,8 +41,10 @@ void handle_sigint(int sig){
 }
 
 void str_overwrite_stdout() {
-  printf("%s", "> ");
-  fflush(stdout);
+    printf(RED);
+    printf("%s", "> ");
+    printf(RESET);
+    fflush(stdout);
 }
 
 void sendmsghandler(){
@@ -51,10 +53,12 @@ void sendmsghandler(){
 
     while(1){
         str_overwrite_stdout();
+        printf(BLU);
         fgets(msg, MAX_LEN, stdin);
+        printf(RESET);
         msg[strcspn(msg, "\n")] = '\0';   //remove newline
 
-        if(strcmp(msg, "exit") == 0)
+        if(strcmp(msg, "/exit") == 0)
             break;
         else{
             sprintf(buffer, "%s: %s\n", name, msg);
@@ -75,7 +79,7 @@ void recvmsghandler(){
         int receive = recv(sockfd, msg, MAX_LEN, 0);
 
         if(receive > 0){
-            printf("%s", msg);
+            printf(GRE"%s"RESET, msg);
             str_overwrite_stdout();
         }
         else if(receive == 0)
@@ -89,7 +93,6 @@ void recvmsghandler(){
 
 int16_t socket_create(void){
     int16_t hSocket = 0;
-    printf("Creating the Socket\n");
     hSocket = socket(AF_INET, SOCK_STREAM, 0);
     /*
         AF_INET - internet protocal
@@ -100,6 +103,8 @@ int16_t socket_create(void){
 }
 
 int main(int argc, char *argv[]){
+    printf(CLEAR);
+
     if(argc != 3)
         ERROR("Usage: ./client <port> <ip>\n");
 
@@ -109,7 +114,10 @@ int main(int argc, char *argv[]){
     //handle user pressing ctrl+c
     signal(SIGINT, handle_sigint);
 
-    printf("Enter a username to be seen by other users: ");
+    printf(RED"{"YEL"|"GRE"["BLU"#--#--#--Welcome To The Server--#--#--#"GRE"]"YEL"|"RED"}"RESET"\n");
+    printf(BACRED"     "BACYEL"     "BACGRE"     "BACBLU"     "BACMAG"     "BACRED"     "BACYEL"     "BACGRE"     "BACBLU"     "RESET"\n");
+
+    printf("Enter a "YEL"username "RESET"to be seen by other users: ");
     fgets(name, 32, stdin);
     name[strcspn(name, "\n")] = '\0';   //remove newline
 
