@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <stdint.h>
 
+#include "../include/colors.h"
 #include "../include/common.h"
 
 int16_t socket_create(void);
@@ -67,13 +68,16 @@ int main(int argc, char *argv[]){
 
         //init buffers for recviving and sending
         memset(client_message, '\0', sizeof(client_message));
+        memset(message, '\0', sizeof(message));
 
         if(recv(sock, client_message, 200, 0) < 0)
             ERROR("recv failed!\n");
 
-        printf("Client: %s\n", client_message);
+        printf(MAG"%s\n"RESET, client_message);
 
-        //close(sock);
+        send(sock, client_message, strlen(client_message), 0);
+
+        close(sock);
         sleep(1);
     }
 }

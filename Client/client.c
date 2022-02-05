@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <stdint.h>
 
+#include "../include/colors.h"
 #include "../include/common.h"
 #include "include/account.h"
 
@@ -43,42 +44,46 @@ int main(int argc, char *argv[]){
 
     int hSocket = 0, read_size = 0;
     //struct sockaddr_in server;
-    char sendToServer[100] = {0};
+    char sendToServer[1024] = {0};
+    char usrMessage[1024] = {0};
     char server_reply[200] = {0};
 
     account_load(&acc_data, accdatapath);
+    strcat(acc_data.usrname, ": ");
 
-    hSocket = socket_create();
+    while(1){
+        memset(sendToServer, '\0', sizeof(sendToServer));
 
-    if(hSocket == -1)
-        ERROR("Could not create socket!\n");
+        hSocket = socket_create();
 
-    DEBUG("Socket Created! hSocket %d\n", hSocket);
+        if(hSocket == -1)
+            ERROR("Could not create socket!\n");
 
-    if(socket_connect(hSocket, server_port, server_ip) < 0)
-        ERROR("Connect Failed!\n");
+        DEBUG("Socket Created! hSocket %d\n", hSocket);
 
-    printf("Sucessfully Connected With Server\n");
+        if(socket_connect(hSocket, server_port, server_ip) < 0)
+            ERROR("Connect Failed!\n");
 
-    printf("Enter the Message: ");
-    fgets(sendToServer, 100, stdin);
+        printf(GRE"Enter the Message: "RESET);
+        fgets(usrMessage, 1024, stdin);
+        usrMessage[strcspn(usrMessage, "\n")] = '\0';
+        strcat(sendToServer, acc_data.usrname);
+        strcat(sendToServer, usrMessage);
 
-    //Send data to server
-    socket_send(hSocket, acc_data.ip_address, strlen(acc_data.ip_address));
-    socket_send(hSocket, sendToServer, strlen(sendToServer));
+        //Send data to server
+        socket_send(hSocket, sendToServer, strlen(sendToServer));
 
-    //Recive data from the server
-    read_size = socket_receive(hSocket, server_reply, 200);
-    printf("server response: %s\n\n", server_reply);
+        //Recive data from the server
+        read_size = socket_receive(hSocket, server_reply, 200);
+        printf(MAG"%s"RESET"\n\n", server_reply);
 
-    close(hSocket);
-
+        close(hSocket);
+    }
     return 0;
 }
 
 int16_t socket_create(void){
     int16_t hSocket = 0;
-    printf("Creating the Socket\n");
     hSocket = socket(AF_INET, SOCK_STREAM, 0);
     /*
         AF_INET - internet protocal
@@ -126,8 +131,7 @@ int socket_receive(int hSocket, char* Rsp, int16_t RvcSize){
     if(setsockopt(hSocket, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv)) < 0)
         ERROR("Time Out!\n");
 
-    shortRetval = send(hSocket, Rsp, RvcSize, 0);
-    printf("Response %s\n", Rsp);
+    shortRetval = recv(hSocket, Rsp, RvcSize, 0);
 
     return shortRetval;
 }
