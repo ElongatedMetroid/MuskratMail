@@ -15,6 +15,7 @@
 
 #define BUFSIZE 2048
 #define MAX_CLIENTS 100
+#define MAX_UID_LEN 3
 
 struct client{
     struct sockaddr_in address;
@@ -23,7 +24,11 @@ struct client{
     char name[32];
 };
 
+extern struct client *clients[MAX_CLIENTS];
+extern pthread_mutex_t clients_mutex;
+
 int16_t socket_create(void);
+void socket_bind(int port, int listenfd);
 void send_message(char *str, int uid);
 void send_private_message(char *str, int uid);
 void client_list(int personal_uid);

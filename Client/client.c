@@ -34,7 +34,9 @@
 
 volatile sig_atomic_t flag = 0;
 int sockfd = 0;
-char name[32];
+char loginInfo[64];
+char name[64];
+char buf[64];
 
 void handle_sigint(int sig){
     flag = 1;
@@ -117,12 +119,15 @@ int main(int argc, char *argv[]){
     printf(RED"{"YEL"|"GRE"["BLU"#--#--#--Welcome To The Server--#--#--#"GRE"]"YEL"|"RED"}"RESET"\n");
     printf(BACRED"     "BACYEL"     "BACGRE"     "BACBLU"     "BACMAG"     "BACRED"     "BACYEL"     "BACGRE"     "BACBLU"     "RESET"\n");
 
-    printf("Enter a "YEL"username "RESET"to be seen by other users: ");
-    fgets(name, 32, stdin);
-    name[strcspn(name, "\n")] = '\0';   //remove newline
+    printf("Enter your existing "YEL"UID "RESET"and "YEL"password"RESET" (fmt:<uid> <passwd> <name> [10 password bob]) :\n");
+    fgets(loginInfo, 64, stdin);
+    loginInfo[strcspn(loginInfo, "\n")] = '\0';   //remove newline
 
-    if(strlen(name) > 32 || strlen(name) < 2)
-        ERROR("Name must be less than 30 and more the 2 chars!\n");
+    sscanf(loginInfo, "%s %s %s", buf, buf, name);
+    puts(name);
+
+    if(strlen(loginInfo) > 64 || strlen(loginInfo) < 2)
+        ERROR("UID, Password, and Name MUST be under 64 chars and above 2\n");
 
     struct sockaddr_in server_addr;
 
@@ -141,7 +146,7 @@ int main(int argc, char *argv[]){
         ERROR("connect failed!\n");
 
     //send name
-    send(sockfd, name, 32, 0);
+    send(sockfd, loginInfo, 32, 0);
 
     pthread_t sendmsgthread = 0;
 

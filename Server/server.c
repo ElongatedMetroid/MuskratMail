@@ -18,25 +18,14 @@
 */
 
 #include "server.h"
+#include "include/account.h"
 
 //atomic allows thread safe code by not allowing two threads to read the same value from memory at the same time
 static _Atomic uint32_t cli_count = 0;
-static int uid = 10;
-
+char *account_file_path = NULL;
 struct client *clients[MAX_CLIENTS];
 
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-int16_t socket_create(void){
-    int16_t hSocket = 0;
-    hSocket = socket(AF_INET, SOCK_STREAM, 0);
-    /*
-        AF_INET - internet protocal
-        SOCK_STREAM - socket type
-        3rd arg - flags, in this case it means protocal is choose automaticaly
-    */
-    return hSocket;
-}
 
 void send_message(char *str, int uid){
     pthread_mutex_lock(&clients_mutex);
@@ -116,38 +105,51 @@ void queue_remove(int uid){
 }
 
 void manageArgs(char *buf_out, int uid){
-    char *gbuf = NULL; //general buf
-
     if(strstr(buf_out, "/PRIVATE")){
-        gbuf = xmalloc(sizeof(buf_out));
+        int i = 0;
+        sscanf(buf_out, "%d", &i);
 
-        strcpy(gbuf, strstr(buf_out, "/PRIVATE"));
-        strcpy(gbuf, strstr(gbuf, " "));
-
-        int privMesUID = atoi(gbuf);
-
-        send_private_message(buf_out, privMesUID);
-        free(gbuf);
+        send_private_message(buf_out, i);
     }
-    else if(strstr(buf_out, "/ls")){
+    else if(strstr(buf_out, "/ls"))
         client_list(uid);
-    }
+    else if(strstr(buf_out, "/clear"))
+        send_private_message(CLEAR, uid);
 }
 
 void* handle_client(void *ptr){
     char buff_out[BUFSIZE];
-    char name[32];
+    char loginInfo[64];
     int leave_flg = 0;
 
     cli_count++;
     struct client *cli = (struct client*)ptr;
 
-    if(recv(cli->sockfd, name, 32, 0) <= 0 || strlen(name) < 2 || strlen(name) >= 32-1){
-        printf("Did not enter name\n");
-        leave_flg = 1;
+    if(recv(cli->sockfd, loginInfo, 64, 0) <= 0 || strlen(loginInfo) < 2 || strlen(loginInfo) >= 64-1){
+        printf("Did not enter UID and Password\n");
+        leave_flg = 0;
     }
     else{
+        char *usr_uid = NULL;
+        char *pass = NULL;
+        char *name = NULL;
+
+        usr_uid = xmalloc(sizeof(loginInfo));
+        pass = xmalloc(sizeof(loginInfo));
+        name = xmalloc(sizeof(loginInfo));
+
+        sscanf(loginInfo, "%s %s %s", usr_uid, pass, name);
+
+        if(account_load(cli, account_file_path, usr_uid, pass) == EXIT_FAILURE){
+            send_private_message("UID and Password not found\nYou are now disconnected.\n", cli->uid);
+            leave_flg = 1;
+        }
+
+        free(usr_uid);
+        free(pass);
+
         strcpy(cli->name, name);
+        free(name);
         sprintf(buff_out, GRE"%s"RESET" has "RED"j"YEL"o"GRE"i"BLU"n"MAG"e"RED"d"YEL"!"RESET"\n", cli->name);
         printf("%s", buff_out);
         send_message(buff_out, cli->uid);
@@ -157,13 +159,15 @@ void* handle_client(void *ptr){
 
     while(1){
         restart:
-        if(leave_flg)
+        if(leave_flg){
+            printf("got leave flag %d\n", leave_flg);
             break;
+        }
 
         int receive = recv(cli->sockfd, buff_out, BUFSIZE, 0);
         if(receive > 0){
             
-            if(strstr(buff_out, "/PRIVATE") || strstr(buff_out, "/ls")){
+            if(strstr(buff_out, "/PRIVATE") || strstr(buff_out, "/ls") || strstr(buff_out, "/clear")){
                 manageArgs(buff_out, cli->uid);
                 goto restart;                               //so it does not show private message in public chat
             }
@@ -192,33 +196,20 @@ void* handle_client(void *ptr){
     close(cli->sockfd);
     queue_remove(cli->uid);
     free(cli);
+    cli = NULL;
     cli_count--;
     pthread_detach(pthread_self());
 
     return NULL;
 }
 
-int main(int argc, char *argv[]){
-    if(argc < 2)
-        ERROR("Usage: ./server <port>\n");
-
-    printf("Server started!\n (Dont Worry, Your server is not broken, more output will come once a person has joined or an error has occured)\n");
-
-    int port = atoi(argv[1]);
-    int listenfd = 0, connfd = 0;
-    int option = 1;
-
+void socket_bind(int port, int listenfd){
     struct sockaddr_in serv_addr;
-    struct sockaddr_in cli_addr;
-    pthread_t threadid;
-
-    listenfd = socket_create();
-    if(listenfd == -1)
-        ERROR("Could not create socket!\n");
+    int option = 1;
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serv_addr.sin_port = htons(port);
+    serv_addr.sin_port = htons(port);               //convert ports byte order to network byte order (host to short)
 
     signal(SIGPIPE, SIG_IGN);
 
@@ -227,10 +218,42 @@ int main(int argc, char *argv[]){
 
     if(bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
         ERROR("socket binding failed!\n");
+}
+
+int16_t socket_create(void){
+    int16_t hSocket = 0;
+    hSocket = socket(AF_INET, SOCK_STREAM, 0);
+    /*
+        AF_INET - internet protocal
+        SOCK_STREAM - socket type
+        3rd arg - flags, in this case it means protocal is choose automaticaly
+    */
+    if(hSocket == -1)
+        ERROR("Could not create socket!\n");
+    return hSocket;
+}
+
+int main(int argc, char *argv[]){
+    if(argc < 3)
+        ERROR("Usage: ./server <port> <accountsfile>\n");
+
+    printf("Server started!\n (Dont Worry, Your server is not broken, more output will come once a person has joined or an error has occured)\n");
+
+    int port = atoi(argv[1]);
+    account_file_path = xmalloc(sizeof(argv[2] + 1));
+    account_file_path = argv[2];  //Make global
+    int listenfd = 0, connfd = 0;
+
+    pthread_t threadid = 0;
+
+    listenfd = socket_create();
+
+    socket_bind(port, listenfd);
 
     if(listen(listenfd, MAX_CLIENTS) < 0)
         ERROR("listening failed!\n");
 
+    struct sockaddr_in cli_addr;
     while(1){
         socklen_t cli_len = sizeof(cli_addr);
         connfd = accept(listenfd, (struct sockaddr*)&cli_addr, &cli_len);
@@ -242,13 +265,12 @@ int main(int argc, char *argv[]){
         }
 
         struct client *cli = (struct client*)xmalloc(sizeof(struct client));
+
         cli->address = cli_addr;
         cli->sockfd = connfd;
-        cli->uid = uid++;
 
-        queue_add(cli);
+        queue_add(cli);         //put cli in first NULL spot in clients array
         pthread_create(&threadid, NULL, &handle_client, (void*)cli);
-
         sleep(1);   //save some cpu usage
     }
 
