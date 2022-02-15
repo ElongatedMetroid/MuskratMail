@@ -1,3 +1,33 @@
+					HOW TO COMPILE
+
 To build this program in the root directory type "make all"
-inside a terminal on linux, if using windows open a wsl window
+inside a terminal on linux, if using windows open a wsl windows
 and in the root directory of this program type "make win"
+
+To set up a server you are required to make an account info file
+an account info file includes account UID's and account passwords
+to make one you will need to create a file, it can be called
+anything, I reccomend "accounts" after you create this file open
+it up and the first thing you will enter will be an account UID
+then an account password you can do that multiple times if you
+are confused please take a look at the example below (please note
+that account UID's can be anything (inside the 32-bit signed 
+integer limit), but we reccomend starting at 10 and incrementing
+by one every new account). Also take note that the accounts file
+MUST end in a newline.
+
+accounts
+```
+10
+password
+11
+12345
+12
+password123
+
+```
+
+The user will then sign in with this UID and password this UID
+is also used to direct message other users of Muskrat Mail. Users
+can view others UID's with the "/ls" command inside of Muskrat 
+Mail.
