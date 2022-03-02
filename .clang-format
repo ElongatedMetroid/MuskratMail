@@ -1,1 +1,6 @@
-DisableFormat: true
+Language: LK_Cpp
+PointerAlignment: Right
+AlignConsecutiveMacros: true
+AlignConsecutiveAssignments: true
+AlwaysBreakBeforeMultilineStrings: false
+IndentPPDirectives: AfterHash
