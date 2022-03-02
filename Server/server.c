@@ -18,7 +18,6 @@
 */
 
 #include "server.h"
-#include "include/account.h"
 
 // atomic allows thread safe code by not allowing two threads to read the same
 // value from memory at the same time
@@ -28,37 +27,30 @@ struct client *clients[MAX_CLIENTS];
 
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void send_message(char *str, int uid) {
+void send_message(char *str, int uid, bool isprivate) {
   pthread_mutex_lock(&clients_mutex);
 
   for (int i = 0; i < MAX_CLIENTS;
        i++) {         // write to all clients while we have not hit max
     if (clients[i]) { // if clients[i] contains any data...
-      if (clients[i]->uid != uid) { // send message to everyone but self
-        if (write(clients[i]->sockfd, str, strlen(str)) < 0) {
-          perror("Write to sockfd failed!\n");
-          break;
+      if (isprivate) {
+        if (clients[i]->uid == uid) {
+          if (write(clients[i]->sockfd, str, strlen(str)) < 0) {
+            perror("Write to sockfd failed!\n");
+            break;
+          }
         }
       }
-    }
-  }
-
-  pthread_mutex_unlock(&clients_mutex);
-}
-
-void send_private_message(char *str, int uid) {
-  pthread_mutex_lock(&clients_mutex);
-
-  for (int i = 0; i < MAX_CLIENTS;
-       i++) {         // write to all clients while we have not hit max
-    if (clients[i]) { // if clients[i] contains any data...
-      if (clients[i]->uid == uid) { // send message to everyone but self
-        if (write(clients[i]->sockfd, str, strlen(str)) < 0)
-          perror("Write to sockfd failed!\n");
-        break;
-      }
-    }
-  }
+      if (!isprivate) {
+        if (clients[i]->uid != uid) { // send message to everyone but self
+          if (write(clients[i]->sockfd, str, strlen(str)) < 0) {
+            perror("Write to sockfd failed!\n");
+            break;
+          } // end write success check
+        }   // end if
+      }     // end else
+    }       // end if
+  }         // end for
 
   pthread_mutex_unlock(&clients_mutex);
 }
@@ -73,7 +65,7 @@ void client_list(int personal_uid) {
               clients[i]->uid);
       pthread_mutex_unlock(
           &clients_mutex); // unlock to allow sending private message
-      send_private_message(buf, personal_uid);
+      send_message(buf, personal_uid, true);
       pthread_mutex_lock(&clients_mutex);
     }
   }
@@ -115,11 +107,11 @@ void manageArgs(char *buf_out, int uid) {
     int i = 0;
     sscanf(buf_out, "%d", &i);
 
-    send_private_message(buf_out, i);
+    send_message(buf_out, i, true);
   } else if (strstr(buf_out, "/ls"))
     client_list(uid);
   else if (strstr(buf_out, "/clear"))
-    send_private_message(CLEAR, uid);
+    send_message(CLEAR, uid, true);
 }
 
 void *handle_client(void *ptr) {
@@ -146,8 +138,8 @@ void *handle_client(void *ptr) {
     sscanf(loginInfo, "%s %s %s", usr_uid, pass, name);
 
     if (account_load(cli, account_file_path, usr_uid, pass) == EXIT_FAILURE) {
-      send_private_message(
-          "UID and Password not found\nYou are now disconnected.\n", cli->uid);
+      send_message("UID and Password not found\nYou are now disconnected.\n",
+                   cli->uid, true);
       leave_flg = 1;
     }
 
@@ -161,7 +153,7 @@ void *handle_client(void *ptr) {
                 "d" YEL "!" RESET "\n",
             cli->name);
     printf("%s", buff_out);
-    send_message(buff_out, cli->uid);
+    send_message(buff_out, cli->uid, false);
   }
 
   bzero(buff_out, BUFSIZE); // clear out buffer
@@ -175,20 +167,21 @@ void *handle_client(void *ptr) {
     int receive = recv(cli->sockfd, buff_out, BUFSIZE, 0);
     if (receive > 0) {
 
-      if (strstr(buff_out, "/PRIVATE") || strstr(buff_out, "/ls") || strstr(buff_out, "/clear")) {
+      if (strstr(buff_out, "/PRIVATE") || strstr(buff_out, "/ls") ||
+          strstr(buff_out, "/clear")) {
         manageArgs(buff_out, cli->uid);
         continue; // so it does not show private message in public chat
       }
 
       if (strlen(buff_out) > 0) {
-        send_message(buff_out, cli->uid);
+        send_message(buff_out, cli->uid, false);
         buff_out[strcspn(buff_out, "\n")] = '\0'; // remove newline
         printf("%s -> %s\n", buff_out, cli->name);
       }
     } else if (receive == 0 || strcmp(buff_out, "/exit") == 0) {
       sprintf(buff_out, "%s has left\n", cli->name);
       printf("%s", buff_out);
-      send_message(buff_out, cli->uid);
+      send_message(buff_out, cli->uid, false);
       leave_flg = 1;
     } else {
       printf("Err: recv returned -1\n");
