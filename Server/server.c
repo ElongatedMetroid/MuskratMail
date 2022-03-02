@@ -31,26 +31,26 @@ void send_message(char *str, int uid, bool isprivate) {
   pthread_mutex_lock(&clients_mutex);
 
   for (int i = 0; i < MAX_CLIENTS;
-       i++) {         // write to all clients while we have not hit max
-    if (clients[i]) { // if clients[i] contains any data...
-      if (isprivate) {
+       i++) { // write to all clients while we have not hit max
+    if (isprivate) {
+      if (clients[i]) { // if clients[i] contains any data...
         if (clients[i]->uid == uid) {
-          if (write(clients[i]->sockfd, str, strlen(str)) < 0) {
+          if (write(clients[i]->sockfd, str, strlen(str)) < 0)
             perror("Write to sockfd failed!\n");
-            break;
-          }
+          break;
         }
       }
-      if (!isprivate) {
+    }
+    if (!isprivate) {
+      if (clients[i]) {
         if (clients[i]->uid != uid) { // send message to everyone but self
-          if (write(clients[i]->sockfd, str, strlen(str)) < 0) {
+          if (write(clients[i]->sockfd, str, strlen(str)) < 0)
             perror("Write to sockfd failed!\n");
-            break;
-          } // end write success check
-        }   // end if
-      }     // end else
-    }       // end if
-  }         // end for
+          break;
+        }
+      }
+    } // end else
+  }   // end for
 
   pthread_mutex_unlock(&clients_mutex);
 }
@@ -104,10 +104,9 @@ void queue_remove(int uid) {
 
 void manageArgs(char *buf_out, int uid) {
   if (strstr(buf_out, "/PRIVATE")) {
-    int i = 0;
-    sscanf(buf_out, "%d", &i);
-
-    send_message(buf_out, i, true);
+    char *tmp = xmalloc(sizeof(buf_out));
+    sscanf(buf_out, "%s %s %s", tmp, tmp, tmp);
+    send_message(buf_out, atoi(tmp), true);
   } else if (strstr(buf_out, "/ls"))
     client_list(uid);
   else if (strstr(buf_out, "/clear"))
